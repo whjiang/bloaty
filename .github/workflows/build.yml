@@ -59,13 +59,8 @@ jobs:
         run: |
           cmake --build build/bloaty --config Release --target test
           cmake --build build/bloaty --config Release --target check-bloaty
-      - name: Package
-        run: |
-          cd ${{github.workspace}}/build
-          cpack -G TGZ  # Generate a tar.gz package. You can change the generator as needed (e.g., -G ZIP for .zip files)
-
       - name: Upload Artifact
         uses: actions/upload-artifact@v3
         with:
           name: nightly-build-package
-          path: ${{github.workspace}}/build/*.tar.gz  # Adjust the path based on the package type
+          path: ${{github.workspace}}/build/bloaty  # Adjust the path based on the package type
