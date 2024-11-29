@@ -10,107 +10,12 @@ on:
   workflow_dispatch:
 
 jobs:
-  windows:
-    runs-on: windows-latest
-
-    strategy:
-      fail-fast: false
-      matrix:
-        arch: ["Win32", "x64"] # "ARM64"
-
-    steps:
-      - uses: actions/checkout@v2
-        with:
-          repository: llvm/llvm-project
-          ref: llvmorg-17.0.0-rc3
-          path: llvm-project
-          fetch-depth: 1
-      - name: Get LLVM Revision
-        id: llvm-revision
-        run: |
-          echo "revision=$(git -C ${{ github.workspace }}/llvm-project rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@v2
-        id: llvm-build
-        with:
-          path: ${{ github.workspace }}/build/llvm-project
-          key: ${{ runner.os }}-${{ matrix.arch }}-${{ steps.llvm-revision.outputs.revision }}
-      - name: configure LLVM
-        if: steps.llvm-build.outputs.cache-hit != 'true'
-        run: cmake -B ${{ github.workspace }}/build/llvm-project -D CMAKE_BUILD_TYPE=Release -G "Visual Studio 17 2022" -S ${{ github.workspace }}/llvm-project/llvm
-      - name: build LLVM tools
-        if: steps.llvm-build.outputs.cache-hit != 'true'
-        run: |
-          cmake --build ${{ github.workspace }}/build/llvm-project --config Release --target FileCheck
-          cmake --build ${{ github.workspace }}/build/llvm-project --config Release --target yaml2obj
-
-      - uses: actions/checkout@v2
-        with:
-          path: bloaty
-      - name: configure
-        run: cmake -B build/bloaty -D CMAKE_BUILD_TYPE=Debug -G "Visual Studio 17 2022" -A ${{ matrix.arch }} -S ${{ github.workspace }}/bloaty -D FILECHECK_EXECUTABLE=${{ github.workspace }}/build/llvm-project/Release/bin/FileCheck.exe -D YAML2OBJ_EXECUTABLE=${{ github.workspace }}/build/llvm-project/Release/bin/yaml2obj.exe -D LIT_EXECUTABLE=${{ github.workspace }}/llvm-project/llvm/utils/lit/lit.py
-      - name: build
-        run: cmake --build build/bloaty --config Debug
-      - name: test
-        run: |
-          cmake --build build/bloaty --config Debug --target RUN_TESTS
-          cmake --build build/bloaty --config Debug --target check-bloaty
-
-  macOS:
-    runs-on: macos-latest
-
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { cflags: "", cxxflags: "" }
-          - { cflags: "-fmodules", cxxflags: "-fmodules" }
-
-    steps:
-      - uses: seanmiddleditch/gha-setup-ninja@master
-
-      - uses: actions/checkout@v2
-        with:
-          repository: llvm/llvm-project
-          ref: llvmorg-17.0.0-rc3
-          path: llvm-project
-          fetch-depth: 1
-      - name: Get LLVM Revision
-        id: llvm-revision
-        run: |
-          echo "revision=$(git -C ${{ github.workspace }}/llvm-project rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@v2
-        id: llvm-build
-        with:
-          path: ${{ github.workspace }}/build/llvm-project
-          key: ${{ runner.os }}-${{ steps.llvm-revision.outputs.revision }}
-      - name: configure LLVM
-        if: steps.llvm-build.outputs.cache-hit != 'true'
-        run: cmake -B ${{ github.workspace }}/build/llvm-project -D CMAKE_BUILD_TYPE=Release -G Ninja -S ${{ github.workspace }}/llvm-project/llvm
-      - name: build LLVM tools
-        if: steps.llvm-build.outputs.cache-hit != 'true'
-        run: |
-          cmake --build ${{ github.workspace }}/build/llvm-project --target FileCheck
-          cmake --build ${{ github.workspace }}/build/llvm-project --target yaml2obj
-
-      - uses: actions/checkout@v2
-        with:
-          path: ${{ github.workspace }}/bloaty
-      - name: configure
-        run: cmake -B build/bloaty -D CMAKE_BUILD_TYPE=Debug -D CMAKE_C_FLAGS=${{ matrix.cflags }} -D CMAKE_CXX_FLAGS=${{ matrix.cxxflags }} -G Ninja -S ${{ github.workspace }}/bloaty -D BLOATY_PREFER_SYSTEM_CAPSTONE=NO -D FILECHECK_EXECUTABLE=${{ github.workspace }}/build/llvm-project/bin/FileCheck -D YAML2OBJ_EXECUTABLE=${{ github.workspace }}/build/llvm-project/bin/yaml2obj -D LIT_EXECUTABLE=${{ github.workspace }}/llvm-project/llvm/utils/lit/lit.py
-      - name: build
-        run: cmake --build build/bloaty --config Debug
-      - name: test
-        run: |
-          cmake --build build/bloaty --config Debug --target test
-          cmake --build build/bloaty --config Debug --target check-bloaty
-
   ubuntu:
     runs-on: ubuntu-latest
 
     strategy:
       matrix:
         include:
-          - { CC: gcc, CXX: g++ }
           - { CC: clang, CXX: clang++ }
 
     steps:
@@ -144,13 +49,23 @@ jobs:
         with:
           path: ${{ github.workspace }}/bloaty
       - name: configure
-        run: cmake -B build/bloaty -D CMAKE_BUILD_TYPE=Debug -G Ninja -S ${{ github.workspace }}/bloaty -D FILECHECK_EXECUTABLE=${{ github.workspace }}/build/llvm-project/bin/FileCheck -D YAML2OBJ_EXECUTABLE=${{ github.workspace }}/build/llvm-project/bin/yaml2obj -D LIT_EXECUTABLE=${{ github.workspace }}/llvm-project/llvm/utils/lit/lit.py
+        run: cmake -B build/bloaty -D CMAKE_BUILD_TYPE=Release -G Ninja -S ${{ github.workspace }}/bloaty -D FILECHECK_EXECUTABLE=${{ github.workspace }}/build/llvm-project/bin/FileCheck -D YAML2OBJ_EXECUTABLE=${{ github.workspace }}/build/llvm-project/bin/yaml2obj -D LIT_EXECUTABLE=${{ github.workspace }}/llvm-project/llvm/utils/lit/lit.py
         env:
           CC: ${{ matrix.CC }}
           CXX: ${{ matrix.CXX }}
       - name: build
-        run: cmake --build build/bloaty --config Debug
+        run: cmake --build build/bloaty --config Release
       - name: test
         run: |
-          cmake --build build/bloaty --config Debug --target test
-          cmake --build build/bloaty --config Debug --target check-bloaty
+          cmake --build build/bloaty --config Release --target test
+          cmake --build build/bloaty --config Release --target check-bloaty
+      - name: Package
+        run: |
+          cd ${{github.workspace}}/build
+          cpack -G TGZ  # Generate a tar.gz package. You can change the generator as needed (e.g., -G ZIP for .zip files)
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: nightly-build-package
+          path: ${{github.workspace}}/build/*.tar.gz  # Adjust the path based on the package type
